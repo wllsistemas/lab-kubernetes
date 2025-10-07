@@ -10,8 +10,6 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       image_tag: ${{ steps.generate_tag.outputs.now }}
-      php_image: ${{ secrets.DOCKER_USERNAME }}/php_8_3_fpm
-      nginx_image: ${{ secrets.DOCKER_USERNAME }}/nginx
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -66,7 +64,7 @@ jobs:
           target: "/tmp/k8s-deploy-manifests/"
 
   deploy_to_kubernetes:
-    needs: [copy_manifests_to_kubernetes, build_and_push_images]
+    needs: [run_tests, build_and_push_images]
     runs-on: ubuntu-latest
     steps:
       - name: Aplicando manifestos Kubernetes na VPS
@@ -156,21 +154,50 @@ jobs:
             O workflow de CI/CD para PHP/Nginx em ${{ github.repository }} foi executado com sucesso.
 
             DETALHES
+            - Status: Sucesso ✅
             - Autor do Commit: ${{ github.event.head_commit.author.name }} 
             - Branch: ${{ github.ref_name }}
             - Commit: ${{ github.sha }}
             - Mensagem do Commit: ${{ github.event.head_commit.message }}
             - Tag da Imagem Utilizada: ${{ needs.build_and_push_images.outputs.image_tag }}
+            - Link do Commit: ${{ github.event.head_commit.url }}
 
             Você pode revisar os detalhes da execução aqui: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           to: "william@wllsistemas.com.br"
           from: "wllsistemas02@gmail.com"
 
   send_failure_notification:
-    needs: [build_and_push_images, run_tests, deploy_to_kubernetes]
+    needs:
+      [
+        build_and_push_images,
+        run_tests,
+        deploy_to_kubernetes,
+        copy_manifests_to_kubernetes,
+      ]
     if: failure()
     runs-on: ubuntu-latest
     steps:
+      - name: Obter informações da falha
+        id: get_failure_info # ID do step para referenciar seus outputs
+        run: |
+          # Inicializa a mensagem de detalhes
+          FAILURE_MESSAGE="Detalhes da falha:"
+
+          if [[ "${{ needs.build_and_push_images.result }}" == "failure" ]]; then
+            FAILURE_MESSAGE="${FAILURE_MESSAGE}\n  - Job 'Build e Push das Imagens Docker' falhou."
+          fi
+          if [[ "${{ needs.run_tests.result }}" == "failure" ]]; then
+            FAILURE_MESSAGE="${FAILURE_MESSAGE}\n  - Job 'Executar Testes' falhou."
+          fi
+          if [[ "${{ needs.deploy_to_kubernetes.result }}" == "failure" ]]; then
+            FAILURE_MESSAGE="${FAILURE_MESSAGE}\n  - Job 'Deploy para Kubernetes' falhou."
+          fi
+          if [[ "${{ needs.copy_manifests_to_kubernetes.result }}" == "failure" ]]; then
+            FAILURE_MESSAGE="${FAILURE_MESSAGE}\n  - Job 'Copiar Manifests para Kubernetes' falhou."
+          fi
+
+          echo "message=$FAILURE_MESSAGE" >> $GITHUB_OUTPUT
+
       - name: Send failure email
         uses: dawidd6/action-send-mail@v3
         with:
@@ -185,10 +212,13 @@ jobs:
             O workflow de CI/CD para PHP/Nginx em ${{ github.repository }} **FALHOU**!
 
             DETALHES:
+            - Status: Falha ❌
             - Autor do Commit: ${{ github.event.head_commit.author.name }} 
             - Branch: ${{ github.ref_name }}
             - Commit: ${{ github.sha }}
             - Mensagem do Commit: ${{ github.event.head_commit.message }}
+            - Link do Commit: ${{ github.event.head_commit.url }}
+            - Falha: ${{ steps.get_failure_info.outputs.message }}
 
             Por favor, verifique os logs para mais detalhes e identifique a causa da falha: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           to: "william@wllsistemas.com.br"
