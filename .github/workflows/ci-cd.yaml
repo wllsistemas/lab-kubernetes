@@ -8,8 +8,6 @@ on:
 jobs:
   build_and_push_images:
     runs-on: ubuntu-latest
-    outputs:
-      image_tag: ${{ steps.generate_tag.outputs.now }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -26,16 +24,16 @@ jobs:
 
       - name: Build e push da imagem PHP no Docker HUB
         run: |
-          docker build -t ${{ secrets.DOCKER_USERNAME }}/php_8_3_fpm:${{ steps.generate_tag.outputs.now }} -f build/Dockerfile-php .
+          docker build -t ${{ secrets.DOCKER_USERNAME }}/php_8_3_fpm:v${{ github.run_number }} -f build/Dockerfile-php .
           docker build -t ${{ secrets.DOCKER_USERNAME }}/php_8_3_fpm:latest -f build/Dockerfile-php .
-          docker push ${{ secrets.DOCKER_USERNAME }}/php_8_3_fpm:${{ steps.generate_tag.outputs.now }}
+          docker push ${{ secrets.DOCKER_USERNAME }}/php_8_3_fpm:v${{ github.run_number }}
           docker push ${{ secrets.DOCKER_USERNAME }}/php_8_3_fpm:latest
 
       - name: Build e push da imagem Nginx no Docker HUB
         run: |
-          docker build -t ${{ secrets.DOCKER_USERNAME }}/nginx:${{ steps.generate_tag.outputs.now }} -f build/Dockerfile-nginx .
+          docker build -t ${{ secrets.DOCKER_USERNAME }}/nginx:v${{ github.run_number }} -f build/Dockerfile-nginx .
           docker build -t ${{ secrets.DOCKER_USERNAME }}/nginx:latest -f build/Dockerfile-nginx .
-          docker push ${{ secrets.DOCKER_USERNAME }}/nginx:${{ steps.generate_tag.outputs.now }}
+          docker push ${{ secrets.DOCKER_USERNAME }}/nginx:v${{ github.run_number }}
           docker push ${{ secrets.DOCKER_USERNAME }}/nginx:latest
 
   run_tests:
@@ -64,7 +62,7 @@ jobs:
           target: "/tmp/k8s-deploy-manifests/"
 
   deploy_to_kubernetes:
-    needs: [copy_manifests_to_kubernetes, build_and_push_images]
+    needs: [copy_manifests_to_kubernetes]
     runs-on: ubuntu-latest
     steps:
       - name: Aplicando manifestos Kubernetes na VPS
@@ -101,14 +99,14 @@ jobs:
             NGINX_DEPLOYMENT_FILE="pod-nginx.yaml"
 
             if [ -f "$PHP_DEPLOYMENT_FILE" ]; then
-              sed -i "s|image: ${{ secrets.DOCKER_USERNAME }}/php_8_3_fpm:.*|image: ${{ secrets.DOCKER_USERNAME }}/php_8_3_fpm:${{ needs.build_and_push_images.outputs.image_tag }}|g" "$PHP_DEPLOYMENT_FILE"
+              sed -i "s|image: ${{ secrets.DOCKER_USERNAME }}/php_8_3_fpm:.*|image: ${{ secrets.DOCKER_USERNAME }}/php_8_3_fpm:v${{ github.run_number }}|g" "$PHP_DEPLOYMENT_FILE"
               echo "Atualizado TAG na imagem PHP $PHP_DEPLOYMENT_FILE"
             else
               echo "Atenção:: $PHP_DEPLOYMENT_FILE não encontrado. TAG da imagem PHP não será atualizada."
             fi
 
             if [ -f "$NGINX_DEPLOYMENT_FILE" ]; then
-              sed -i "s|image: ${{ secrets.DOCKER_USERNAME }}/nginx:.*|image: ${{ secrets.DOCKER_USERNAME }}/nginx:${{ needs.build_and_push_images.outputs.image_tag }}|g" "$NGINX_DEPLOYMENT_FILE"
+              sed -i "s|image: ${{ secrets.DOCKER_USERNAME }}/nginx:.*|image: ${{ secrets.DOCKER_USERNAME }}/nginx:v${{ github.run_number }}|g" "$NGINX_DEPLOYMENT_FILE"
               echo "Atualizado TAG na imagem Nginx $NGINX_DEPLOYMENT_FILE"
             else
               echo "Atenção:: $NGINX_DEPLOYMENT_FILE não encontrado. TAG da imagem Nginx não será atualizada."
@@ -136,7 +134,7 @@ jobs:
             rm -rf ~/.kube
 
   send_success_notification:
-    needs: [deploy_to_kubernetes, build_and_push_images]
+    needs: [deploy_to_kubernetes]
     if: success()
     runs-on: ubuntu-latest
     steps:
@@ -159,7 +157,7 @@ jobs:
             - Branch: ${{ github.ref_name }}
             - Commit: ${{ github.sha }}
             - Mensagem do Commit: ${{ github.event.head_commit.message }}
-            - Tag da Imagem Utilizada: ${{ needs.build_and_push_images.outputs.image_tag }}
+            - Tag da Imagem Utilizada: ${{ github.run_number }}
             - Link do Commit: ${{ github.event.head_commit.url }}
 
             Você pode revisar os detalhes da execução aqui: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
