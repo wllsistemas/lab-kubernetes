@@ -24,15 +24,15 @@ jobs:
 
       - name: Build e push da imagem PHP no Docker HUB
         run: |
-          docker build -t ${{ secrets.DOCKER_USERNAME }}/php_8_3_fpm:${{ steps.date.outputs.now }} -f build/Dockerfile-php php/
-          docker build -t ${{ secrets.DOCKER_USERNAME }}/php_8_3_fpm:latest -f build/Dockerfile-php php/
+          docker build -t ${{ secrets.DOCKER_USERNAME }}/php_8_3_fpm:${{ steps.date.outputs.now }} -f build/Dockerfile-php .
+          docker build -t ${{ secrets.DOCKER_USERNAME }}/php_8_3_fpm:latest -f build/Dockerfile-php .
           docker push ${{ secrets.DOCKER_USERNAME }}/php_8_3_fpm:${{ steps.date.outputs.now }}
           docker push ${{ secrets.DOCKER_USERNAME }}/php_8_3_fpm:latest
 
       - name: Build e push da imagem Nginx no Docker HUB
         run: |
-          docker build -t ${{ secrets.DOCKER_USERNAME }}/nginx:${{ steps.date.outputs.now }} -f build/Dockerfile-nginx nginx/
-          docker build -t ${{ secrets.DOCKER_USERNAME }}/nginx:latest -f build/Dockerfile-nginx nginx/
+          docker build -t ${{ secrets.DOCKER_USERNAME }}/nginx:${{ steps.date.outputs.now }} -f build/Dockerfile-nginx .
+          docker build -t ${{ secrets.DOCKER_USERNAME }}/nginx:latest -f build/Dockerfile-nginx .
           docker push ${{ secrets.DOCKER_USERNAME }}/nginx:${{ steps.date.outputs.now }}
           docker push ${{ secrets.DOCKER_USERNAME }}/nginx:latest
 
