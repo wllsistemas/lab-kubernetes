@@ -67,13 +67,13 @@ jobs:
 
             # 3. Define a lista de manifests a aplicar em ordem.
             MANIFEST_FILES=(
+              "metrics-server.yaml"        
               "secret.yaml"        
               "configmap.yaml"      
               "svc-php.yaml"            
               "svc-nginx.yaml" 
               "pod-php.yaml"       
               "pod-nginx.yaml"     
-              "metrics-server.yaml"        
               "hpa-nginx.yaml"
             )
 
