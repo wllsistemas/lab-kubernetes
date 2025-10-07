@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lab-php
+spec:
+  selector:
+    matchLabels:
+      app: lab-php
+  template:
+    metadata:
+      labels:
+        app: lab-php
+    spec:
+      containers:
+        - name: lab-php
+          image: wllsistemas/php_8_3_fpm:v5
+          ports:
+            - containerPort: 9000
+          env:
+            - name: KUBERNETES_APP_ENV # Nome da variável de ambiente no container
+              valueFrom:
+                configMapKeyRef:
+                  name: php-app-config # Nome do ConfigMap
+                  key: APP_ENV # Chave do ConfigMap
+            - name: KUBERNETES_DB_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: php-app-config
+                  key: DB_HOST
+            - name: DATABASE_PASSWORD # Nome da variável de ambiente no container
+              valueFrom:
+                secretKeyRef:
+                  name: lab-secret # Nome do Secret
+                  key: DB_PASSWORD # Chave do Secret
+            - name: EXTERNAL_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: lab-secret
+                  key: API_KEY

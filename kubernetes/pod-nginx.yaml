@@ -1,0 +1,18 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lab-nginx
+spec:
+  selector:
+    matchLabels:
+      app: lab-nginx
+  template:
+    metadata:
+      labels:
+        app: lab-nginx
+    spec:
+      containers:
+        - name: lab-nginx
+          image: wllsistemas/nginx:v6
+          ports:
+            - containerPort: 80

@@ -1,0 +1,117 @@
+name: CI/CD PHP/Nginx, Docker e Kubernetes
+
+on:
+  push:
+    branches:
+      - main # Actions executada com push na branch main
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Login no Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Capturando data/hora para tags
+        id: date
+        run: echo "now=$(date +'%Y%m%d%H%M%S')" >> $GITHUB_OUTPUT
+
+      - name: Build e push da imagem PHP no Docker HUB
+        run: |
+          docker build -t ${{ secrets.DOCKER_USERNAME }}/php_8_3_fpm:${{ steps.date.outputs.now }} -f build/Dockerfile-php php/
+          docker build -t ${{ secrets.DOCKER_USERNAME }}/php_8_3_fpm:latest -f build/Dockerfile-php php/
+          docker push ${{ secrets.DOCKER_USERNAME }}/php_8_3_fpm:${{ steps.date.outputs.now }}
+          docker push ${{ secrets.DOCKER_USERNAME }}/php_8_3_fpm:latest
+
+      - name: Build e push da imagem Nginx no Docker HUB
+        run: |
+          docker build -t ${{ secrets.DOCKER_USERNAME }}/nginx:${{ steps.date.outputs.now }} -f build/Dockerfile-nginx nginx/
+          docker build -t ${{ secrets.DOCKER_USERNAME }}/nginx:latest -f build/Dockerfile-nginx nginx/
+          docker push ${{ secrets.DOCKER_USERNAME }}/nginx:${{ steps.date.outputs.now }}
+          docker push ${{ secrets.DOCKER_USERNAME }}/nginx:latest
+
+      - name: Run testes (Somente Exibição)
+        run: echo "Passando testes ..."
+
+      - name: Copiando manifestos Kubernetes para a VPS
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USERNAME }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: "kubernetes/"
+          target: "/tmp/k8s-deploy-manifests/"
+
+      - name: Deploy do Kubernetes na VPS
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USERNAME }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            # 1. Configura o kubeconfig na VPS para o usuário de deploy
+            mkdir -p ~/.kube
+            echo "${{ secrets.KUBECONFIG_BASE64 }}" | base64 -d > ~/.kube/config
+            chmod 600 ~/.kube/config
+            export KUBECONFIG=~/.kube/config # Garante que kubectl use este arquivo
+
+            # 2. Navega para o diretório onde os manifests foram copiados
+            MANIFESTS_DIR="/tmp/k8s-deploy-manifests/kubernetes"
+            cd "$MANIFESTS_DIR"
+
+            # 3. Define a lista de manifests a aplicar em ordem.
+            MANIFEST_FILES=(
+              "secret.yaml"        
+              "configmap.yaml"      
+              "svc-php.yaml"            
+              "svc-nginx.yaml" 
+              "pod-php.yaml"       
+              "pod-nginx.yaml"     
+              "metrics-server.yaml"        
+              "hpa-nginx.yaml"
+            )
+
+            # 4. Atualiza as tags das imagens nos manifests de Deployment
+            PHP_DEPLOYMENT_FILE="pod-php.yaml"
+            NGINX_DEPLOYMENT_FILE="pod-nginx.yaml"
+
+            if [ -f "$PHP_DEPLOYMENT_FILE" ]; then
+              sed -i "s|image: ${{ secrets.DOCKER_USERNAME }}/my-php-app:.*|image: ${{ secrets.DOCKER_USERNAME }}/my-php-app:${{ steps.date.outputs.now }}|g" "$PHP_DEPLOYMENT_FILE"
+              echo "Atualizado TAG na imagem PHP $PHP_DEPLOYMENT_FILE"
+            else
+              echo "Atenção:: $PHP_DEPLOYMENT_FILE não encontrado. TAG da imagem PHP não será atualizada."
+            fi
+
+            if [ -f "$NGINX_DEPLOYMENT_FILE" ]; then
+              sed -i "s|image: ${{ secrets.DOCKER_USERNAME }}/my-nginx-app:.*|image: ${{ secrets.DOCKER_USERNAME }}/my-nginx-app:${{ steps.date.outputs.now }}|g" "$NGINX_DEPLOYMENT_FILE"
+              echo "Atualizado TAG na imagem Nginx $NGINX_DEPLOYMENT_FILE"
+            else
+              echo "Atenção:: $NGINX_DEPLOYMENT_FILE não encontrado. TAG da imagem Nginx não será atualizada."
+            fi
+
+
+            # 5. Aplica os manifests um por um na ordem definida
+            for file in "${MANIFEST_FILES[@]}"; do
+              if [ -f "$file" ]; then
+                echo "Aplicando $file..."
+                kubectl apply -f "$file"
+              else
+                echo "Aviso: Arquivo de manifesto $file não encontrado, pulando."
+              fi
+            done
+
+            # 6. Verifique o status do rollout de AMBOS os Deployments
+            kubectl rollout status deployment/lab-php --timeout=5m || { echo "PHP Deployment rollout falhou ou houve timeout!"; exit 1; }
+            kubectl rollout status deployment/lab-nginx --timeout=5m || { echo "Nginx Deployment rollout falhou ou houve timeout!"; exit 1; }
+
+            # 7. Limpa o diretório temporário dos manifests na VPS
+            rm -rf /tmp/k8s-deploy-manifests
+
+            # 8. Remove o kubeconfig temporário por segurança
+            rm -rf ~/.kube
