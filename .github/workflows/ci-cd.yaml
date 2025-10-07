@@ -64,7 +64,7 @@ jobs:
           target: "/tmp/k8s-deploy-manifests/"
 
   deploy_to_kubernetes:
-    needs: [run_tests, build_and_push_images]
+    needs: [copy_manifests_to_kubernetes, build_and_push_images]
     runs-on: ubuntu-latest
     steps:
       - name: Aplicando manifestos Kubernetes na VPS
