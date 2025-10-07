@@ -115,3 +115,16 @@ jobs:
 
             # 8. Remove o kubeconfig temporário por segurança
             rm -rf ~/.kube
+
+      - name: Enviando email de sucesso do Deploy
+        if: success()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 587
+          username: ${{ secrets.EMAIL_USERNAME }}
+          password: ${{ secrets.EMAIL_PASSWORD }}
+          subject: "✅ Deploy da branch main concluído com sucesso!"
+          body: "O workflow ${{ github.workflow }} em ${{ github.repository }} foi executado com sucesso. Commit: ${{ github.sha }}"
+          to: "william@wllsistemas.com.br"
+          from: "wllsistemas02@gmail.com"
