@@ -15,10 +15,10 @@ spec:
         name: cpu
         target:
           type: Utilization
-          averageUtilization: 1
+          averageUtilization: 2
     - type: Resource
       resource:
         name: memory
         target:
           type: AverageValue
-          averageValue: 1Mi # Escala para manter a média de memória em 1 MiB por Pod
+          averageValue: 2Mi # Escala para manter a média de memória em 2 MiB por Pod

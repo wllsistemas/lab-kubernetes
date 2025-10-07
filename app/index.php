@@ -8,7 +8,7 @@
 </head>
 
 <body>
-    <h1>TESTE KUBERNETES LAB <?= date('Y-m-d H:i:s') ?></h1>
+    <h1>TESTE CI/CD COM GIT ACTIONS LAB <?= date('Y-m-d H:i:s') ?></h1>
     <?php
     echo "<p>APP_ENV: " . getenv('KUBERNETES_APP_ENV') . "</p>";
     echo "<p>DB_HOST: " . getenv('KUBERNETES_DB_HOST') . "</p>";
