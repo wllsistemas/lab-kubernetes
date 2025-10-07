@@ -6,8 +6,12 @@ on:
       - main # Actions executada com push na branch main
 
 jobs:
-  build-and-deploy:
+  build_and_push_images:
     runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ steps.generate_tag.outputs.now }}
+      php_image: ${{ secrets.DOCKER_USERNAME }}/php_8_3_fpm
+      nginx_image: ${{ secrets.DOCKER_USERNAME }}/nginx
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -19,25 +23,38 @@ jobs:
           password: ${{ secrets.DOCKER_PASSWORD }}
 
       - name: Capturando data/hora para tags
-        id: date
+        id: generate_tag
         run: echo "now=$(date +'%Y%m%d%H%M%S')" >> $GITHUB_OUTPUT
 
       - name: Build e push da imagem PHP no Docker HUB
         run: |
-          docker build -t ${{ secrets.DOCKER_USERNAME }}/php_8_3_fpm:${{ steps.date.outputs.now }} -f build/Dockerfile-php .
+          docker build -t ${{ secrets.DOCKER_USERNAME }}/php_8_3_fpm:${{ steps.generate_tag.outputs.now }} -f build/Dockerfile-php .
           docker build -t ${{ secrets.DOCKER_USERNAME }}/php_8_3_fpm:latest -f build/Dockerfile-php .
-          docker push ${{ secrets.DOCKER_USERNAME }}/php_8_3_fpm:${{ steps.date.outputs.now }}
+          docker push ${{ secrets.DOCKER_USERNAME }}/php_8_3_fpm:${{ steps.generate_tag.outputs.now }}
           docker push ${{ secrets.DOCKER_USERNAME }}/php_8_3_fpm:latest
 
       - name: Build e push da imagem Nginx no Docker HUB
         run: |
-          docker build -t ${{ secrets.DOCKER_USERNAME }}/nginx:${{ steps.date.outputs.now }} -f build/Dockerfile-nginx .
+          docker build -t ${{ secrets.DOCKER_USERNAME }}/nginx:${{ steps.generate_tag.outputs.now }} -f build/Dockerfile-nginx .
           docker build -t ${{ secrets.DOCKER_USERNAME }}/nginx:latest -f build/Dockerfile-nginx .
-          docker push ${{ secrets.DOCKER_USERNAME }}/nginx:${{ steps.date.outputs.now }}
+          docker push ${{ secrets.DOCKER_USERNAME }}/nginx:${{ steps.generate_tag.outputs.now }}
           docker push ${{ secrets.DOCKER_USERNAME }}/nginx:latest
 
+  run_tests:
+    needs: build_and_push_images
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
       - name: Run testes (Somente Exibição)
         run: echo "Passando testes ..."
+
+  deploy_to_kubernetes:
+    needs: [run_tests, build_and_push_images]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
       - name: Copiando manifestos Kubernetes para a VPS
         uses: appleboy/scp-action@v0.1.7
@@ -82,14 +99,14 @@ jobs:
             NGINX_DEPLOYMENT_FILE="pod-nginx.yaml"
 
             if [ -f "$PHP_DEPLOYMENT_FILE" ]; then
-              sed -i "s|image: ${{ secrets.DOCKER_USERNAME }}/php_8_3_fpm:.*|image: ${{ secrets.DOCKER_USERNAME }}/php_8_3_fpm:${{ steps.date.outputs.now }}|g" "$PHP_DEPLOYMENT_FILE"
+              sed -i "s|image: ${{ secrets.DOCKER_USERNAME }}/php_8_3_fpm:.*|image: ${{ secrets.DOCKER_USERNAME }}/php_8_3_fpm:${{ needs.build_and_push_images.outputs.image_tag }}|g" "$PHP_DEPLOYMENT_FILE"
               echo "Atualizado TAG na imagem PHP $PHP_DEPLOYMENT_FILE"
             else
               echo "Atenção:: $PHP_DEPLOYMENT_FILE não encontrado. TAG da imagem PHP não será atualizada."
             fi
 
             if [ -f "$NGINX_DEPLOYMENT_FILE" ]; then
-              sed -i "s|image: ${{ secrets.DOCKER_USERNAME }}/nginx:.*|image: ${{ secrets.DOCKER_USERNAME }}/nginx:${{ steps.date.outputs.now }}|g" "$NGINX_DEPLOYMENT_FILE"
+              sed -i "s|image: ${{ secrets.DOCKER_USERNAME }}/nginx:.*|image: ${{ secrets.DOCKER_USERNAME }}/nginx:${{ needs.build_and_push_images.outputs.image_tag }}|g" "$NGINX_DEPLOYMENT_FILE"
               echo "Atualizado TAG na imagem Nginx $NGINX_DEPLOYMENT_FILE"
             else
               echo "Atenção:: $NGINX_DEPLOYMENT_FILE não encontrado. TAG da imagem Nginx não será atualizada."
@@ -116,8 +133,12 @@ jobs:
             # 8. Remove o kubeconfig temporário por segurança
             rm -rf ~/.kube
 
+  send_success_notification:
+    needs: [deploy_to_kubernetes, build_and_push_images]
+    if: success()
+    runs-on: ubuntu-latest
+    steps:
       - name: Enviando email de sucesso do Deploy
-        if: success()
         uses: dawidd6/action-send-mail@v3
         with:
           server_address: smtp.gmail.com
@@ -125,6 +146,44 @@ jobs:
           username: ${{ secrets.EMAIL_USERNAME }}
           password: ${{ secrets.EMAIL_PASSWORD }}
           subject: "✅ Deploy da branch main concluído com sucesso!"
-          body: "O workflow ${{ github.workflow }} em ${{ github.repository }} foi executado com sucesso. Commit: ${{ github.sha }}"
+          body: |
+            Prezado William,
+
+            O workflow de CI/CD para PHP/Nginx em ${{ github.repository }} foi executado com sucesso.
+
+            **Detalhes:**
+            - **Branch:** ${{ github.ref_name }}
+            - **Commit:** ${{ github.sha }}
+            - **Mensagem do Commit:** ${{ github.event.head_commit.message }}
+            - **Tag da Imagem Utilizada:** ${{ needs.build_and_push_images.outputs.image_tag }}
+
+            Você pode revisar os detalhes da execução aqui: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          to: "william@wllsistemas.com.br"
+          from: "wllsistemas02@gmail.com"
+
+  send_failure_notification:
+    needs: [build_and_push_images, run_tests, deploy_to_kubernetes]
+    if: failure()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send failure email
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 587
+          username: ${{ secrets.EMAIL_USERNAME }}
+          password: ${{ secrets.EMAIL_PASSWORD }}
+          subject: "❌ FALHA no CI/CD PHP/Nginx!"
+          body: |
+            Prezado William,
+
+            O workflow de CI/CD para PHP/Nginx em ${{ github.repository }} **FALHOU**!
+
+            **Detalhes:**
+            - **Branch:** ${{ github.ref_name }}
+            - **Commit:** ${{ github.sha }}
+            - **Mensagem do Commit:** ${{ github.event.head_commit.message }}
+
+            Por favor, verifique os logs para mais detalhes e identifique a causa da falha: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           to: "william@wllsistemas.com.br"
           from: "wllsistemas02@gmail.com"
