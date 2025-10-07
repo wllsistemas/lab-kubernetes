@@ -82,14 +82,14 @@ jobs:
             NGINX_DEPLOYMENT_FILE="pod-nginx.yaml"
 
             if [ -f "$PHP_DEPLOYMENT_FILE" ]; then
-              sed -i "s|image: ${{ secrets.DOCKER_USERNAME }}/my-php-app:.*|image: ${{ secrets.DOCKER_USERNAME }}/my-php-app:${{ steps.date.outputs.now }}|g" "$PHP_DEPLOYMENT_FILE"
+              sed -i "s|image: ${{ secrets.DOCKER_USERNAME }}/php_8_3_fpm:.*|image: ${{ secrets.DOCKER_USERNAME }}/my-php-app:${{ steps.date.outputs.now }}|g" "$PHP_DEPLOYMENT_FILE"
               echo "Atualizado TAG na imagem PHP $PHP_DEPLOYMENT_FILE"
             else
               echo "Atenção:: $PHP_DEPLOYMENT_FILE não encontrado. TAG da imagem PHP não será atualizada."
             fi
 
             if [ -f "$NGINX_DEPLOYMENT_FILE" ]; then
-              sed -i "s|image: ${{ secrets.DOCKER_USERNAME }}/my-nginx-app:.*|image: ${{ secrets.DOCKER_USERNAME }}/my-nginx-app:${{ steps.date.outputs.now }}|g" "$NGINX_DEPLOYMENT_FILE"
+              sed -i "s|image: ${{ secrets.DOCKER_USERNAME }}/nginx:.*|image: ${{ secrets.DOCKER_USERNAME }}/my-nginx-app:${{ steps.date.outputs.now }}|g" "$NGINX_DEPLOYMENT_FILE"
               echo "Atualizado TAG na imagem Nginx $NGINX_DEPLOYMENT_FILE"
             else
               echo "Atenção:: $NGINX_DEPLOYMENT_FILE não encontrado. TAG da imagem Nginx não será atualizada."
