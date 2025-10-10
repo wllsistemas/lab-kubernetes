@@ -132,7 +132,7 @@ jobs:
             FAILURE_MESSAGE="${FAILURE_MESSAGE}\n  - Job 'Executar Testes' falhou."
           fi
           if [[ "${{ needs.deploy_with_terraform.result }}" == "failure" ]]; then
-            FAILURE_MESSAGE="${FAILURE_MESSAGE}\n  - Job 'Deploy com Terraform' falhou."
+            FAILURE_MESSAGE="${FAILURE_MESSAGE}\n  - Job 'Step deploy_with_terraform' falhou."
           fi
           echo "message=$FAILURE_MESSAGE" >> $GITHUB_OUTPUT
 
