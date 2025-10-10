@@ -63,16 +63,20 @@ jobs:
       - name: Initialize Terraform
         run: terraform init
         working-directory: ./terraform
-        # Importante: Para state remoto, configure o backend no seu provider.tf
 
       - name: Terraform Plan
         id: plan
-        run: terraform plan -input=false -out=tfplan -var="php_image_tag=v${{ github.run_number }}" -var="nginx_image_tag=v${{ github.run_number }}"
+        run: terraform plan -input=false -out=tfplan -detailed-exitcode -var="php_image_tag=v${{ github.run_number }}" -var="nginx_image_tag=v${{ github.run_number }}"  || [ $? -eq 2 ]
         working-directory: ./terraform
 
       - name: Terraform Apply
+        if: steps.plan.outputs.exitcode == '2'
         run: terraform apply -input=false tfplan
         working-directory: ./terraform
+
+      - name: No Terraform changes
+        if: steps.plan.outputs.exitcode == '0'
+        run: echo "Não existem mudanças detectadas no Terraform"
 
       - name: Verifique o status do rollout dos Deployments (opcional, para feedback extra)
         run: |
