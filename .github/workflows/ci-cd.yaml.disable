@@ -157,7 +157,7 @@ jobs:
             - Branch: ${{ github.ref_name }}
             - Commit: ${{ github.sha }}
             - Mensagem do Commit: ${{ github.event.head_commit.message }}
-            - Tag da Imagem Utilizada: ${{ github.run_number }}
+            - Tag da Imagem Utilizada: v${{ github.run_number }}
             - Link do Commit: ${{ github.event.head_commit.url }}
 
             Você pode revisar os detalhes da execução aqui: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}

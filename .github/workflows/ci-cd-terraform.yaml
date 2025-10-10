@@ -1,0 +1,163 @@
+name: CI/CD PHP/Nginx, Docker e Kubernetes
+
+on:
+  push:
+    branches:
+      - main # Actions executada com push na branch main
+
+jobs:
+  build_and_push_images:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Login no Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Build e push da imagem PHP no Docker HUB
+        run: |
+          docker build -t ${{ secrets.DOCKER_USERNAME }}/php_8_3_fpm:v${{ github.run_number }} -f build/Dockerfile-php .
+          docker build -t ${{ secrets.DOCKER_USERNAME }}/php_8_3_fpm:latest -f build/Dockerfile-php .
+          docker push ${{ secrets.DOCKER_USERNAME }}/php_8_3_fpm:v${{ github.run_number }}
+          docker push ${{ secrets.DOCKER_USERNAME }}/php_8_3_fpm:latest
+
+      - name: Build e push da imagem Nginx no Docker HUB
+        run: |
+          docker build -t ${{ secrets.DOCKER_USERNAME }}/nginx:v${{ github.run_number }} -f build/Dockerfile-nginx .
+          docker build -t ${{ secrets.DOCKER_USERNAME }}/nginx:latest -f build/Dockerfile-nginx .
+          docker push ${{ secrets.DOCKER_USERNAME }}/nginx:v${{ github.run_number }}
+          docker push ${{ secrets.DOCKER_USERNAME }}/nginx:latest
+
+  run_tests:
+    needs: build_and_push_images
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Run testes (Somente Exibição)
+        run: echo "Passando testes ..."
+
+  deploy_with_terraform:
+    needs: run_tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configurar Kubeconfig no Runner
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBECONFIG_BASE64 }}" | base64 -d > ~/.kube/config
+          chmod 600 ~/.kube/config
+          echo "KUBECONFIG=$HOME/.kube/config" >> $GITHUB_ENV
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "latest"
+
+      - name: Initialize Terraform
+        run: terraform init
+        working-directory: ./terraform
+        # Importante: Para state remoto, configure o backend no seu provider.tf
+
+      - name: Terraform Plan
+        id: plan
+        run: terraform plan -input=false -out=tfplan -var="php_image_tag=v${{ github.run_number }}" -var="nginx_image_tag=v${{ github.run_number }}"
+        working-directory: ./terraform
+
+      - name: Terraform Apply
+        run: terraform apply -input=false tfplan
+        working-directory: ./terraform
+
+      - name: Verifique o status do rollout dos Deployments (opcional, para feedback extra)
+        run: |
+          kubectl rollout status deployment/lab-php -n default --timeout=5m || { echo "PHP Deployment rollout falhou ou houve timeout!"; exit 1; }
+          kubectl rollout status deployment/lab-nginx -n default --timeout=5m || { echo "Nginx Deployment rollout falhou ou houve timeout!"; exit 1; }
+
+      - name: Limpar Kubeconfig temporário (segurança)
+        if: always()
+        run: rm -rf ~/.kube
+
+  send_success_notification:
+    needs: deploy_with_terraform
+    if: success()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Enviando email de sucesso do Deploy
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 587
+          username: ${{ secrets.EMAIL_USERNAME }}
+          password: ${{ secrets.EMAIL_PASSWORD }}
+          subject: "✅ Sucesso no workflow: CI/CD PHP/Nginx!"
+          body: |
+            Prezado William,
+
+            O workflow de CI/CD para PHP/Nginx em ${{ github.repository }} foi executado com sucesso.
+
+            DETALHES
+            - Status: Sucesso ✅
+            - Autor do Commit: ${{ github.event.head_commit.author.name }} 
+            - Branch: ${{ github.ref_name }}
+            - Commit: ${{ github.sha }}
+            - Mensagem do Commit: ${{ github.event.head_commit.message }}
+            - Tag da Imagem Utilizada: v${{ github.run_number }}
+            - Link do Commit: ${{ github.event.head_commit.url }}
+
+            Você pode revisar os detalhes da execução aqui: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          to: "william@wllsistemas.com.br"
+          from: "wllsistemas02@gmail.com"
+
+  send_failure_notification:
+    needs: [build_and_push_images, run_tests, deploy_with_terraform]
+    if: failure()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Obter informações da falha
+        id: get_failure_info # ID do step para referenciar seus outputs
+        run: |
+          # Inicializa a mensagem de detalhes
+          FAILURE_MESSAGE="Detalhes da falha:"
+
+          if [[ "${{ needs.build_and_push_images.result }}" == "failure" ]]; then
+            FAILURE_MESSAGE="${FAILURE_MESSAGE}\n  - Job 'Build e Push das Imagens Docker' falhou."
+          fi
+          if [[ "${{ needs.run_tests.result }}" == "failure" ]]; then
+            FAILURE_MESSAGE="${FAILURE_MESSAGE}\n  - Job 'Executar Testes' falhou."
+          fi
+          if [[ "${{ needs.deploy_with_terraform.result }}" == "failure" ]]; then
+            FAILURE_MESSAGE="${FAILURE_MESSAGE}\n  - Job 'Deploy com Terraform' falhou."
+          fi
+          echo "message=$FAILURE_MESSAGE" >> $GITHUB_OUTPUT
+
+      - name: Send failure email
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 587
+          username: ${{ secrets.EMAIL_USERNAME }}
+          password: ${{ secrets.EMAIL_PASSWORD }}
+          subject: "❌ Falha no workflow: CI/CD PHP/Nginx!"
+          body: |
+            Prezado William,
+
+            O workflow de CI/CD para PHP/Nginx em ${{ github.repository }} **FALHOU**!
+
+            DETALHES:
+            - Status: Falha ❌
+            - Autor do Commit: ${{ github.event.head_commit.author.name }} 
+            - Branch: ${{ github.ref_name }}
+            - Commit: ${{ github.sha }}
+            - Mensagem do Commit: ${{ github.event.head_commit.message }}
+            - Link do Commit: ${{ github.event.head_commit.url }}
+            - Falha: ${{ steps.get_failure_info.outputs.message }}
+
+            Por favor, verifique os logs para mais detalhes e identifique a causa da falha: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          to: "william@wllsistemas.com.br"
+          from: "wllsistemas02@gmail.com"
