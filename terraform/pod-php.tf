@@ -18,7 +18,7 @@ resource "kubernetes_deployment" "lab_php" {
       spec {
         container {
           name  = "lab-php"
-          image = "wllsistemas/php_8_3_fpm:v5"
+          image = "wllsistemas/php_8_3_fpm:${var.php_image_tag}"
           port {
             container_port = 9000
           }

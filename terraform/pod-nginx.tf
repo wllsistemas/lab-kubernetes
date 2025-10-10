@@ -18,7 +18,7 @@ resource "kubernetes_deployment" "lab_nginx" {
       spec {
         container {
           name  = "lab-nginx"
-          image = "wllsistemas/nginx:v6"
+          image = "wllsistemas/nginx:${var.nginx_image_tag}"
           port {
             container_port = 80
           }
