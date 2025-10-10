@@ -18,7 +18,7 @@ resource "kubernetes_horizontal_pod_autoscaler_v2" "hpa_nginx" {
         name = "cpu"
         target {
           type               = "Utilization"
-          average_utilization = 5
+          average_utilization = 50
         }
       }
     }
@@ -29,7 +29,7 @@ resource "kubernetes_horizontal_pod_autoscaler_v2" "hpa_nginx" {
         name = "memory"
         target {
           type          = "AverageValue"
-          average_value = "2Mi" # Escala para manter a média de memória em 2 MiB por Pod
+          average_value = "200Mi" # Escala para manter a média de memória em 2 MiB por Pod
         }
       }
     }
